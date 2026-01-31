@@ -6,6 +6,7 @@ const WS_URL = 'ws://localhost:8080';
 
 function App() {
   const { connected, lastTick, metrics, connect, disconnect, resetMetrics } = useWebSocket(WS_URL);
+  const isTauri = '__TAURI__' in window;
 
   return (
     <div style={{ 
@@ -15,7 +16,19 @@ function App() {
       minHeight: '100vh',
       color: '#fff'
     }}>
-      <h1 style={{ marginBottom: '20px' }}>Tick Bench</h1>
+      <h1 style={{ marginBottom: '20px', display: 'flex', alignItems: 'center' }}>
+        Tick Bench
+        <div style={{ 
+          display: 'inline-block',
+          padding: '4px 8px',
+          backgroundColor: isTauri ? '#7c3aed' : '#2563eb',
+          borderRadius: '4px',
+          fontSize: '12px',
+          marginLeft: '10px'
+        }}>
+          {isTauri ? 'Tauri' : 'Browser'}
+        </div>
+      </h1>
       
       <div style={{ marginBottom: '20px' }}>
         <button 
