@@ -1,5 +1,7 @@
 // client/src/hooks/useWebSocket.ts
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { MetricsCollector } from '../metrics/collector';
+import type { MetricsSnapshot } from '../metrics/collector';
 
 export interface TickMessage {
   symbol: string;
@@ -10,22 +12,36 @@ export interface TickMessage {
 export interface WebSocketState {
   connected: boolean;
   lastTick: TickMessage | null;
-  messageCount: number;
+  metrics: MetricsSnapshot | null;
 }
 
 export function useWebSocket(url: string) {
   const wsRef = useRef<WebSocket | null>(null);
+  const metricsRef = useRef<MetricsCollector>(new MetricsCollector());
   const [state, setState] = useState<WebSocketState>({
     connected: false,
     lastTick: null,
-    messageCount: 0,
+    metrics: null,
   });
-  const messageCountRef = useRef(0);
+
+  // Update metrics display at 1Hz
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        setState((s) => ({
+          ...s,
+          metrics: metricsRef.current.snapshot(),
+        }));
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
 
+    metricsRef.current.start();
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
@@ -40,11 +56,10 @@ export function useWebSocket(url: string) {
     ws.onmessage = (event) => {
       try {
         const tick: TickMessage = JSON.parse(event.data);
-        messageCountRef.current++;
+        metricsRef.current.recordMessage(tick.ts);
         setState((s) => ({
           ...s,
           lastTick: tick,
-          messageCount: messageCountRef.current,
         }));
       } catch (error) {
         console.error('Failed to parse WebSocket message:', error);
@@ -59,8 +74,10 @@ export function useWebSocket(url: string) {
   const disconnect = useCallback(() => {
     wsRef.current?.close();
     wsRef.current = null;
-    messageCountRef.current = 0;
-    setState({ connected: false, lastTick: null, messageCount: 0 });
+  }, []);
+
+  const resetMetrics = useCallback(() => {
+    metricsRef.current.reset();
   }, []);
 
   useEffect(() => {
@@ -69,5 +86,5 @@ export function useWebSocket(url: string) {
     };
   }, []);
 
-  return { ...state, connect, disconnect };
+  return { ...state, connect, disconnect, resetMetrics };
 }
