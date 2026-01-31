@@ -13,14 +13,14 @@
     "windows": [
       {
         "title": "Tick Bench",
-        "width": 800,
-        "height": 600,
+        "width": 900,
+        "height": 700,
         "resizable": true,
         "fullscreen": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; connect-src 'self' ws://localhost:8080 http://localhost:8081; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {
