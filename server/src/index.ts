@@ -1,14 +1,17 @@
 // server/src/index.ts
 import { WebSocketServer, WebSocket } from 'ws';
 import { generateTick } from './generator.js';
+import { startConfigServer, setConfigChangeCallback, getConfig, updateConfig, ServerConfig } from './config.js';
 
-const PORT = 8080;
-const wss = new WebSocketServer({ port: PORT });
+const WS_PORT = 8080;
+const HTTP_PORT = 8081;
 
-let messagesPerSecond = 100;
+const wss = new WebSocketServer({ port: WS_PORT });
+
 let intervalId: ReturnType<typeof setInterval> | null = null;
+let rampIntervalId: ReturnType<typeof setInterval> | null = null;
 
-console.log(`WebSocket server running on ws://localhost:${PORT}`);
+console.log(`WebSocket server running on ws://localhost:${WS_PORT}`);
 
 function broadcast() {
   const message = JSON.stringify(generateTick());
@@ -20,10 +23,21 @@ function broadcast() {
 }
 
 function startBroadcast() {
-  if (intervalId) return;
-  const intervalMs = 1000 / messagesPerSecond;
+  stopBroadcast();
+  const config = getConfig();
+  const intervalMs = 1000 / config.rate;
   intervalId = setInterval(broadcast, intervalMs);
-  console.log(`Broadcasting at ${messagesPerSecond} msg/sec`);
+  console.log(`Broadcasting at ${config.rate} msg/sec`);
+
+  if (config.rampEnabled) {
+    rampIntervalId = setInterval(() => {
+      const current = getConfig();
+      const newRate = Math.floor(current.rate * (1 + current.rampPercent / 100));
+      updateConfig({ rate: newRate });
+      console.log(`Ramped to ${newRate} msg/sec`);
+      restartBroadcast();
+    }, config.rampIntervalSec * 1000);
+  }
 }
 
 function stopBroadcast() {
@@ -31,7 +45,22 @@ function stopBroadcast() {
     clearInterval(intervalId);
     intervalId = null;
   }
+  if (rampIntervalId) {
+    clearInterval(rampIntervalId);
+    rampIntervalId = null;
+  }
 }
+
+function restartBroadcast() {
+  if (wss.clients.size > 0) {
+    startBroadcast();
+  }
+}
+
+setConfigChangeCallback((config: ServerConfig) => {
+  console.log('Config updated:', config);
+  restartBroadcast();
+});
 
 wss.on('connection', (ws) => {
   console.log('Client connected');
@@ -44,3 +73,5 @@ wss.on('connection', (ws) => {
     }
   });
 });
+
+startConfigServer(HTTP_PORT);
