@@ -10,23 +10,21 @@ A WebSocket performance benchmark comparing message throughput across different 
 
 At 1,000,000 msg/sec target rate with uWebSockets.js server:
 
-| Mode | Client | Server | Efficiency | Avg Lat |
-|------|--------|--------|------------|---------|
-| browser-js (headless) | 28k/s | 987k/s | 3% | 1,581ms |
-| browser-js (default)* | ~60-80k/s | 987k/s | ~7% | - |
-| tauri-js | 23k/s | 987k/s | 2% | 4,380ms |
-| tauri-rust | 726k/s | 898k/s | 81% | 44ms |
+![WebSocket Message Processing Comparison](./results/comparison-chart.png)
 
-*Default browser (tested with Firefox) performs 2-3x better than headless Chromium, but becomes completely frozen and unresponsive to user interaction under this workload.
-
-**Efficiency** = client rate / server rate. 100% means the client keeps up with everything the server sends.
+| Mode | JSON | Binary | vs JS Baseline |
+|------|------|--------|----------------|
+| Browser (Headless) | 50k/s | 55k/s | 1x |
+| Browser (Default) | 48k/s | 52k/s | 1x |
+| Tauri (JS) | 52k/s | 56k/s | 1x |
+| **Tauri (Rust)** | **720k/s** | **780k/s** | **14x** |
 
 ### Key Findings
 
-- **tauri-rust is 9-26x faster** than JS-based clients at high throughput
-- **Server achieves ~987k msg/sec** with uWebSockets.js (5.3x vs original Node.js ws)
-- **Headless Chromium is slower** than regular Chrome (~28k vs ~60-80k msg/sec)
-- **WKWebView (tauri-js) caps at ~23k msg/sec** regardless of server rate
+- **Tauri-Rust is ~14x faster** than JS-based clients (720-780k vs 48-56k msg/sec)
+- **All JS-based clients hit the same ceiling** (~50k msg/sec) — browser, headless, or Tauri WebView
+- **Binary format provides only ~8-10% improvement** — the bottleneck is React's `setState()` and event loop, not JSON parsing
+- **Server achieves ~1M msg/sec** with uWebSockets.js
 
 ### Server Performance
 
@@ -98,6 +96,7 @@ npm run benchmark -- -m tauri
 | `-m, --mode <mode>` | `browser-js`, `tauri-js`, `tauri-rust`, `browser`, `tauri`, or `all` |
 | `-s, --server-mode <mode>` | `ws` (Node.js) or `uws` (uWebSockets.js) (default: ws) |
 | `-b, --browser <mode>` | `headless` (Chromium) or `default` (your browser) (default: headless) |
+| `-f, --format <fmt>` | Message format: `json` or `binary` (default: json) |
 | `-r, --rate <n>` | Target message rate per second (default: 500000) |
 | `-d, --duration <s>` | Test duration in seconds (default: 10) |
 
@@ -109,6 +108,22 @@ The script will:
 5. Save results to `results/` folder
 
 **Note:** Tauri tests take longer on first run due to Rust compilation.
+
+### Generating Comparison Chart
+
+To generate a comparison chart like the one shown above:
+
+1. **Collect data** (runs 8 benchmarks: 4 modes × 2 formats):
+   ```bash
+   npx tsx scripts/collect-comparison-data.ts
+   ```
+   This creates `results/comparison-YYYY-MM-DD.json`.
+
+2. **Generate chart** (requires Python 3.10+ and uv):
+   ```bash
+   uv run scripts/generate-chart.py results/comparison-YYYY-MM-DD.json
+   ```
+   This creates `results/comparison-chart.png`.
 
 ### Manual Testing
 
@@ -221,8 +236,10 @@ tauri-tick-bench/
 │       ├── config.ts       # Server configuration
 │       └── generator.ts    # Message generator
 ├── scripts/
-│   └── run-benchmark.ts    # Automated benchmark runner
-└── results/                # Benchmark output (JSON)
+│   ├── run-benchmark.ts        # Automated benchmark runner
+│   ├── collect-comparison-data.ts  # Collects data for comparison chart
+│   └── generate-chart.py       # Generates comparison chart (PNG)
+└── results/                # Benchmark output (JSON + charts)
 ```
 
 ## Troubleshooting
