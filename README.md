@@ -8,7 +8,13 @@ A WebSocket performance benchmark comparing message throughput across different 
 
 ## Sample Results
 
-At 500,000 msg/sec target rate:
+### With uWebSockets.js Server (1,000,000 msg/sec target)
+
+| Mode | Client | Server | Efficiency | Avg Lat |
+|------|--------|--------|------------|---------|
+| tauri-rust | 734k/s | 896k/s | 82% | 43ms |
+
+### With Node.js ws Server (500,000 msg/sec target)
 
 | Mode | Client | Server | Efficiency | Avg Lat | P99 Lat |
 |------|--------|--------|------------|---------|---------|
@@ -17,6 +23,14 @@ At 500,000 msg/sec target rate:
 | tauri-rust | 186k/s | 186k/s | 100% | 0.0ms | 0.0ms |
 
 **Efficiency** = client rate / server rate. 100% means the client keeps up with everything the server sends.
+
+### Server Performance Comparison
+
+| Server Mode | Max Throughput | Improvement |
+|-------------|----------------|-------------|
+| ws (original) | ~186k/s | baseline |
+| ws (optimized) | ~212k/s | 1.1x |
+| uWebSockets.js | ~896k/s | 4.8x |
 
 See [BENCHMARK_REPORT.md](./BENCHMARK_REPORT.md) for detailed analysis.
 
@@ -78,6 +92,7 @@ npm run benchmark -- -m tauri
 | Option | Description |
 |--------|-------------|
 | `-m, --mode <mode>` | `browser-js`, `tauri-js`, `tauri-rust`, `browser`, `tauri`, or `all` |
+| `-s, --server-mode <mode>` | `ws` (Node.js) or `uws` (uWebSockets.js) (default: ws) |
 | `-r, --rate <n>` | Target message rate per second (default: 500000) |
 | `-d, --duration <s>` | Test duration in seconds (default: 10) |
 
@@ -94,14 +109,20 @@ The script will:
 
 #### 1. Start the Server
 
+**Node.js ws server (default):**
 ```bash
 cd server
 npm run dev
 ```
-
-The server runs on:
 - WebSocket: `ws://localhost:8080`
 - HTTP API: `http://localhost:8081`
+
+**uWebSockets.js server (high-performance):**
+```bash
+cd server
+npm run dev:uws
+```
+- WebSocket + HTTP API: `ws://localhost:8080` (combined)
 
 #### 2. Start the Client
 
@@ -161,7 +182,7 @@ const CONFIG = {
 };
 ```
 
-**Note on server throughput:** The `messageRate` is a *target*, not a guarantee. The Node.js server realistically achieves ~150-200k msg/sec due to single-threaded execution and `setInterval` timer resolution limits (~4ms minimum). The server logs its actual send rate during tests.
+**Note on server throughput:** The `messageRate` is a *target*, not a guarantee. The Node.js ws server achieves ~200k msg/sec. For higher throughput (~900k+ msg/sec), use the uWebSockets.js server with `--server-mode uws`.
 
 ## Understanding Results
 
@@ -189,7 +210,9 @@ tauri-tick-bench/
 │           └── websocket.rs # Rust WebSocket implementation
 ├── server/                 # WebSocket server
 │   └── src/
-│       ├── index.ts        # Main server
+│       ├── index.ts        # Entry point (selects server mode)
+│       ├── ws-server.ts    # Node.js ws implementation
+│       ├── uws-server.ts   # uWebSockets.js implementation
 │       ├── config.ts       # Server configuration
 │       └── generator.ts    # Message generator
 ├── scripts/
