@@ -12,17 +12,21 @@ At 1,000,000 msg/sec target rate with uWebSockets.js server:
 
 | Mode | Client | Server | Efficiency | Avg Lat |
 |------|--------|--------|------------|---------|
-| browser-js | 28k/s | 987k/s | 3% | 1,581ms |
+| browser-js (headless) | 28k/s | 987k/s | 3% | 1,581ms |
+| browser-js (default)* | ~60-80k/s | 987k/s | ~7% | - |
 | tauri-js | 23k/s | 987k/s | 2% | 4,380ms |
 | tauri-rust | 726k/s | 898k/s | 81% | 44ms |
+
+*Default browser (Chrome/Safari) typically performs 2-3x better than headless Chromium.
 
 **Efficiency** = client rate / server rate. 100% means the client keeps up with everything the server sends.
 
 ### Key Findings
 
-- **tauri-rust is 26-32x faster** than JS-based clients at high throughput
+- **tauri-rust is 9-26x faster** than JS-based clients at high throughput
 - **Server achieves ~987k msg/sec** with uWebSockets.js (5.3x vs original Node.js ws)
-- **JS WebSocket clients cap at ~23-28k msg/sec** regardless of server rate (browser-js ≈ tauri-js)
+- **Headless Chromium is slower** than regular Chrome (~28k vs ~60-80k msg/sec)
+- **WKWebView (tauri-js) caps at ~23k msg/sec** regardless of server rate
 
 ### Server Performance
 
