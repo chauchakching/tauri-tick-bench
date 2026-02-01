@@ -41,30 +41,21 @@ See [BENCHMARK_REPORT.md](./BENCHMARK_REPORT.md) for detailed analysis.
 - **Node.js** 18+ and npm
 - **Rust** (via [rustup](https://rustup.rs/))
 - **Tauri CLI** dependencies (see [Tauri Prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites))
+- **Python** 3.10+ and [uv](https://docs.astral.sh/uv/) (for chart generation only)
 - **macOS** (benchmark script uses macOS-specific commands)
 
 ## Installation
 
-1. Clone the repository:
-   ```bash
-   git clone <repo-url>
-   cd tauri-tick-bench
-   ```
+```bash
+# Clone the repository
+git clone <repo-url>
+cd tauri-tick-bench
 
-2. Install root dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Install server dependencies:
-   ```bash
-   cd server && npm install && cd ..
-   ```
-
-4. Install client dependencies:
-   ```bash
-   cd client && npm install && cd ..
-   ```
+# Install all dependencies (root, server, client)
+npm install
+npm install --prefix server
+npm install --prefix client
+```
 
 ## Running the Benchmark
 
@@ -91,14 +82,16 @@ npm run benchmark -- -m tauri
 
 **CLI Options:**
 
-| Option | Description |
-|--------|-------------|
-| `-m, --mode <mode>` | `browser-js`, `tauri-js`, `tauri-rust`, `browser`, `tauri`, or `all` |
-| `-s, --server-mode <mode>` | `ws` (Node.js) or `uws` (uWebSockets.js) (default: ws) |
-| `-b, --browser <mode>` | `headless` (Chromium) or `default` (your browser) (default: headless) |
-| `-f, --format <fmt>` | Message format: `json` or `binary` (default: json) |
-| `-r, --rate <n>` | Target message rate per second (default: 500000) |
-| `-d, --duration <s>` | Test duration in seconds (default: 10) |
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-m, --mode <mode>` | `browser-js`, `tauri-js`, `tauri-rust`, `browser`, `tauri`, or `all` | `all` |
+| `-s, --server-mode <mode>` | `ws` (Node.js ~200k/s) or `uws` (uWebSockets.js ~1M/s) | `ws` |
+| `-b, --browser <mode>` | `headless` (Chromium) or `default` (your browser) | `headless` |
+| `-f, --format <fmt>` | Message format: `json` or `binary` | `json` |
+| `-r, --rate <n>` | Target message rate per second | `500000` |
+| `-d, --duration <s>` | Test duration in seconds | `10` |
+
+> **Tip:** Use `-s uws` to test at high throughput. The `ws` server saturates around 200k msg/sec.
 
 The script will:
 1. Start the WebSocket server
@@ -129,53 +122,46 @@ To generate a comparison chart like the one shown above:
 
 #### 1. Start the Server
 
-**Node.js ws server (default):**
+**Node.js ws server** (~200k msg/sec):
 ```bash
-cd server
-npm run dev
+npm run dev --prefix server
 ```
-- WebSocket: `ws://localhost:8080`
-- HTTP API: `http://localhost:8081`
+- WebSocket: ws://localhost:8080
+- HTTP API: http://localhost:8081
 
-**uWebSockets.js server (high-performance):**
+**uWebSockets.js server** (~1M msg/sec):
 ```bash
-cd server
-npm run dev:uws
+npm run dev:uws --prefix server
 ```
-- WebSocket + HTTP API: `ws://localhost:8080` (combined)
+- WebSocket + HTTP API: ws://localhost:8080 (combined)
 
 #### 2. Start the Client
 
 **Browser (JS WebSocket):**
 ```bash
-cd client
-npm run dev
+npm run dev --prefix client
 ```
 Open http://localhost:5173 in your browser.
 
 **Tauri App (JS WebSocket):**
 ```bash
-cd client
-TICK_BENCH_MODE=js npm run tauri:dev
+TICK_BENCH_MODE=js npm run tauri:dev --prefix client
 ```
 
 **Tauri App (Rust WebSocket):**
 ```bash
-cd client
-TICK_BENCH_MODE=rust npm run tauri:dev
+TICK_BENCH_MODE=rust npm run tauri:dev --prefix client
 ```
 
 ## Configuration
 
 ### Server Configuration
 
-The server exposes an HTTP API to adjust settings during runtime:
+The server exposes an HTTP API to adjust settings at runtime:
 
 ```bash
 # Set message rate (messages per second)
-curl -X POST http://localhost:8081/config \
-  -H "Content-Type: application/json" \
-  -d '{"rate": 100000}'
+curl -X POST http://localhost:8081/config -H "Content-Type: application/json" -d '{"rate": 100000}'
 
 # Get current configuration
 curl http://localhost:8081/config
@@ -186,6 +172,8 @@ curl http://localhost:8081/stats
 # Clear stats
 curl -X DELETE http://localhost:8081/stats
 ```
+
+> **Note:** For uWebSockets.js, the HTTP API is on port 8080 (same as WebSocket).
 
 ### Benchmark Script Configuration
 
@@ -202,17 +190,23 @@ const CONFIG = {
 };
 ```
 
-**Note on server throughput:** The `messageRate` is a *target*, not a guarantee. The Node.js ws server achieves ~200k msg/sec. For higher throughput (~900k+ msg/sec), use the uWebSockets.js server with `--server-mode uws`.
+The `messageRate` is a *target*, not a guarantee. Actual throughput depends on the server implementation (see CLI options above).
 
 ## Understanding Results
 
-The benchmark measures:
+The benchmark measures throughput and latency:
 
 | Metric | Description |
 |--------|-------------|
-| **Msg/sec** | Actual messages processed per second |
-| **Avg Latency** | Average time from server send to client receive |
-| **P99 Latency** | 99th percentile latency |
+| **Msg/sec** | Messages successfully processed per second by the client |
+| **Avg Latency** | Average time from server send to client receive (ms) |
+| **P99 Latency** | 99th percentile latency — worst-case for 99% of messages (ms) |
+| **Efficiency** | Client throughput ÷ server send rate (percentage) |
+
+**Interpreting results:**
+- **Efficiency < 100%** means the client can't keep up with the server
+- **High P99 with low Avg** indicates occasional stalls (GC, event loop blocking)
+- **JS clients plateau at ~50k msg/sec** regardless of server rate — this is the React/JS bottleneck
 
 ## Project Structure
 
