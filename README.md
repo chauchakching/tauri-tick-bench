@@ -10,7 +10,7 @@ A WebSocket performance benchmark comparing message throughput across different 
 
 At 1,000,000 msg/sec target rate with uWebSockets.js server:
 
-![WebSocket Message Processing Comparison](./results/comparison-chart.png)
+![WebSocket Message Processing Comparison](./docs/images/comparison-chart.png)
 
 | Mode | JSON | Binary | vs JS Baseline |
 |------|------|--------|----------------|
