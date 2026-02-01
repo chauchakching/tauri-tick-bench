@@ -4,9 +4,11 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "dev:uws": "SERVER_MODE=uws tsx src/index.ts",
     "start": "tsx src/index.ts"
   },
   "dependencies": {
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.57.0",
     "ws": "^8.16.0"
   },
   "devDependencies": {
