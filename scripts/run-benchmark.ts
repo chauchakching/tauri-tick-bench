@@ -21,6 +21,7 @@ function parseArgs() {
     rate: 500_000,
     duration: 10,
     serverMode: 'ws' as 'ws' | 'uws',
+    browserMode: 'headless' as 'headless' | 'default',
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -49,6 +50,14 @@ function parseArgs() {
         console.error(`Unknown server mode: ${mode}. Use 'ws' or 'uws'`);
         process.exit(1);
       }
+    } else if (arg === '--browser' || arg === '-b') {
+      const mode = args[++i];
+      if (mode === 'headless' || mode === 'default') {
+        config.browserMode = mode;
+      } else {
+        console.error(`Unknown browser mode: ${mode}. Use 'headless' or 'default'`);
+        process.exit(1);
+      }
     } else if (arg === '--help' || arg === '-h') {
       console.log(`
 Usage: npx tsx scripts/run-benchmark.ts [options]
@@ -56,14 +65,16 @@ Usage: npx tsx scripts/run-benchmark.ts [options]
 Options:
   -m, --mode <mode>      Mode to test: browser-js, tauri-js, tauri-rust, browser, tauri, all
                          (default: all)
+  -s, --server-mode <m>  Server mode: ws or uws (default: ws)
+  -b, --browser <mode>   Browser mode: headless (Chromium) or default (your browser)
+                         (default: headless)
   -r, --rate <number>    Target message rate per second (default: 500000)
   -d, --duration <sec>   Test duration in seconds (default: 10)
-  -s, --server-mode <m>  Server mode: ws or uws (default: ws)
   -h, --help             Show this help
 
 Examples:
   npx tsx scripts/run-benchmark.ts --mode tauri-rust --rate 500000 --duration 15
-  npx tsx scripts/run-benchmark.ts -m browser -r 100000
+  npx tsx scripts/run-benchmark.ts -m browser -b default   # Use your default browser
   npx tsx scripts/run-benchmark.ts --server-mode uws -m browser
   npm run benchmark -- --mode tauri-rust
 `);
@@ -84,6 +95,7 @@ const CONFIG = {
   messageRate: ARGS.rate,
   modes: ARGS.modes,
   serverMode: ARGS.serverMode,
+  browserMode: ARGS.browserMode,
 };
 
 interface ClientStats {
@@ -310,37 +322,46 @@ async function closeBrowser() {
   }
 }
 
-// Run browser test using Puppeteer (headless Chromium)
+// Run browser test
 async function runBrowserTest(): Promise<TestResult | null> {
-  console.log('\n🌐 Testing: browser-js');
+  const browserLabel = CONFIG.browserMode === 'headless' ? 'browser-js (headless)' : 'browser-js (default)';
+  console.log(`\n🌐 Testing: ${browserLabel}`);
   
   // Ensure Vite is running
   if (!await isPortInUse(CONFIG.clientDevPort)) {
     await startVite();
   }
   
-  // Launch headless browser
   const url = `http://localhost:${CONFIG.clientDevPort}`;
-  console.log(`   Launching headless Chromium...`);
   
-  try {
-    browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
-    
-    const page = await browser.newPage();
-    console.log(`   Opening ${url}`);
-    await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
-  } catch (e) {
-    console.log(`   ❌ Failed to launch browser: ${e}`);
-    return null;
+  if (CONFIG.browserMode === 'headless') {
+    // Headless Chromium via Puppeteer
+    console.log(`   Launching headless Chromium...`);
+    try {
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      });
+      
+      const page = await browser.newPage();
+      console.log(`   Opening ${url}`);
+      await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
+    } catch (e) {
+      console.log(`   ❌ Failed to launch browser: ${e}`);
+      return null;
+    }
+  } else {
+    // Default browser via macOS `open` command
+    console.log(`   Opening in default browser: ${url}`);
+    await execAsync(`open "${url}"`);
   }
   
   // Wait for client to connect to server
   if (!await waitForClient('browser-js', 30000)) {
     console.log('   ❌ Client did not connect');
-    await closeBrowser();
+    if (CONFIG.browserMode === 'headless') {
+      await closeBrowser();
+    }
     return null;
   }
   
@@ -348,7 +369,14 @@ async function runBrowserTest(): Promise<TestResult | null> {
   const result = await runTest('browser-js', CONFIG.testDurationSec);
   
   // Close browser
-  await closeBrowser();
+  if (CONFIG.browserMode === 'headless') {
+    await closeBrowser();
+  } else {
+    // Close browser tab (macOS) - best effort
+    try {
+      await execAsync(`osascript -e 'tell application "System Events" to keystroke "w" using command down'`);
+    } catch {}
+  }
   
   if (result) {
     console.log(`   Result: ${result.clientMsgPerSec.toLocaleString()}/s (${result.efficiency.toFixed(1)}% efficiency)`);
@@ -509,6 +537,9 @@ async function main() {
   console.log(`   Duration: ${CONFIG.testDurationSec}s`);
   console.log(`   Modes: ${CONFIG.modes.join(', ')}`);
   console.log(`   Server: ${CONFIG.serverMode}`);
+  if (CONFIG.modes.includes('browser-js')) {
+    console.log(`   Browser: ${CONFIG.browserMode}`);
+  }
   
   try {
     // Start server

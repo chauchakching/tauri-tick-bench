@@ -93,6 +93,7 @@ npm run benchmark -- -m tauri
 |--------|-------------|
 | `-m, --mode <mode>` | `browser-js`, `tauri-js`, `tauri-rust`, `browser`, `tauri`, or `all` |
 | `-s, --server-mode <mode>` | `ws` (Node.js) or `uws` (uWebSockets.js) (default: ws) |
+| `-b, --browser <mode>` | `headless` (Chromium) or `default` (your browser) (default: headless) |
 | `-r, --rate <n>` | Target message rate per second (default: 500000) |
 | `-d, --duration <s>` | Test duration in seconds (default: 10) |
 
