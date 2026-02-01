@@ -1,7 +1,13 @@
 // server/src/ws-server.ts
-import { WebSocketServer, WebSocket } from 'ws';
-import { generateTick } from './generator.js';
-import { setConfigChangeCallback, setStatsCallbacks, getConfig, updateConfig, ServerConfig } from './config.js';
+import { WebSocketServer, WebSocket } from "ws";
+import { generateTick, generateTickBinary, BINARY_TICK_SIZE } from "./generator.js";
+import {
+  setConfigChangeCallback,
+  setStatsCallbacks,
+  getConfig,
+  updateConfig,
+  ServerConfig,
+} from "./config.js";
 
 let wss: WebSocketServer;
 
@@ -28,7 +34,10 @@ const clientStats: Map<string, ClientStats> = new Map();
 const clientIdBySocket: Map<WebSocket, string> = new Map();
 
 function broadcast() {
-  const message = JSON.stringify(generateTick());
+  const config = getConfig();
+  const isBinary = config.format === 'binary';
+  const message = isBinary ? generateTickBinary() : JSON.stringify(generateTick());
+  
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(message);
@@ -39,8 +48,11 @@ function broadcast() {
 
 // For high rates (>1000/sec), send multiple messages per tick
 function broadcastBatch(messagesPerTick: number) {
+  const config = getConfig();
+  const isBinary = config.format === 'binary';
+  
   for (let i = 0; i < messagesPerTick; i++) {
-    const message = JSON.stringify(generateTick());
+    const message = isBinary ? generateTickBinary() : JSON.stringify(generateTick());
     wss.clients.forEach((client) => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(message);
@@ -56,9 +68,12 @@ let cachedTimestamp = 0;
 
 function getSerializedTick(): Buffer {
   const now = Date.now();
+  const config = getConfig();
+  const isBinary = config.format === 'binary';
+  
   // Regenerate every 1ms to keep timestamps fresh
   if (!cachedMessage || now - cachedTimestamp >= 1) {
-    cachedMessage = Buffer.from(JSON.stringify(generateTick()));
+    cachedMessage = isBinary ? generateTickBinary() : Buffer.from(JSON.stringify(generateTick()));
     cachedTimestamp = now;
   }
   return cachedMessage;
@@ -83,11 +98,11 @@ function startHighFrequencyBroadcast(targetRate: number) {
 
   function tick() {
     if (!highFreqRunning) return;
-    
+
     const now = process.hrtime.bigint();
     const elapsed = Number(now - lastSendTime);
     const messagesToSend = Math.floor(elapsed / nsPerMessage);
-    
+
     if (messagesToSend > 0) {
       const message = getSerializedTick();
       for (let i = 0; i < messagesToSend; i++) {
@@ -95,10 +110,10 @@ function startHighFrequencyBroadcast(targetRate: number) {
       }
       lastSendTime = now;
     }
-    
+
     setImmediate(tick);
   }
-  
+
   setImmediate(tick);
 }
 
@@ -114,24 +129,26 @@ function startTelemetry() {
     const actualRate = Math.round(messagesSentThisSecond / elapsed);
     lastActualRate = actualRate; // Store for API
     const targetRate = getConfig().rate;
-    
+
     // Build stats output
     let output = `[Stats] Rate: ${targetRate.toLocaleString()}/s | Server actual: ${actualRate.toLocaleString()}/s\n`;
-    
-    const clientTypes = ['browser-js', 'tauri-js', 'tauri-rust'];
+
+    const clientTypes = ["browser-js", "tauri-js", "tauri-rust"];
     for (const clientId of clientTypes) {
       const stats = clientStats.get(clientId);
-      if (stats && (now - stats.lastUpdate) < 5000) {
-        output += `        ${clientId.padEnd(12)}: ${stats.messagesPerSec.toLocaleString().padStart(8)} msg/s, lat: ${stats.avgLatencyMs.toFixed(1)}ms avg`;
+      if (stats && now - stats.lastUpdate < 5000) {
+        output += `        ${clientId.padEnd(12)}: ${stats.messagesPerSec
+          .toLocaleString()
+          .padStart(8)} msg/s, lat: ${stats.avgLatencyMs.toFixed(1)}ms avg`;
         if (stats.p99LatencyMs > 0) {
           output += ` / ${stats.p99LatencyMs.toFixed(1)}ms p99`;
         }
-        output += '\n';
+        output += "\n";
       } else {
         output += `        ${clientId.padEnd(12)}: (not connected)\n`;
       }
     }
-    
+
     console.log(output.trimEnd());
     messagesSentThisSecond = 0;
     lastTelemetryTime = now;
@@ -148,29 +165,32 @@ function stopTelemetry() {
 function startBroadcast() {
   stopBroadcast();
   const config = getConfig();
-  
+  const formatLabel = config.format === 'binary' ? 'binary (20B)' : 'json (~50B)';
+
   // Use high-frequency mode for rates > 10000
   const HIGH_FREQ_THRESHOLD = 10000;
-  
+
   if (config.rate > HIGH_FREQ_THRESHOLD) {
-    console.log(`Broadcasting at ${config.rate} msg/sec (high-frequency mode)`);
+    console.log(`Broadcasting at ${config.rate} msg/sec (high-frequency mode, ${formatLabel})`);
     startHighFrequencyBroadcast(config.rate);
   } else if (config.rate <= 1000) {
     const intervalMs = 1000 / config.rate;
     intervalId = setInterval(broadcast, intervalMs);
-    console.log(`Broadcasting at ${config.rate} msg/sec`);
+    console.log(`Broadcasting at ${config.rate} msg/sec (${formatLabel})`);
   } else {
     const messagesPerTick = Math.ceil(config.rate / 1000);
     intervalId = setInterval(() => broadcastBatch(messagesPerTick), 1);
-    console.log(`Broadcasting at ${config.rate} msg/sec (batch mode)`);
+    console.log(`Broadcasting at ${config.rate} msg/sec (batch mode, ${formatLabel})`);
   }
-  
+
   startTelemetry();
 
   if (config.rampEnabled) {
     rampIntervalId = setInterval(() => {
       const current = getConfig();
-      const newRate = Math.floor(current.rate * (1 + current.rampPercent / 100));
+      const newRate = Math.floor(
+        current.rate * (1 + current.rampPercent / 100)
+      );
       updateConfig({ rate: newRate });
       console.log(`Ramped to ${newRate} msg/sec`);
       restartBroadcast();
@@ -199,12 +219,12 @@ function restartBroadcast() {
 
 // Handle incoming messages from clients
 interface IdentifyMessage {
-  type: 'identify';
+  type: "identify";
   clientId: string;
 }
 
 interface StatsMessage {
-  type: 'stats';
+  type: "stats";
   clientId: string;
   messagesPerSec: number;
   totalMessages: number;
@@ -217,11 +237,11 @@ type ClientMessage = IdentifyMessage | StatsMessage;
 function handleClientMessage(ws: WebSocket, data: string) {
   try {
     const msg: ClientMessage = JSON.parse(data);
-    
-    if (msg.type === 'identify') {
+
+    if (msg.type === "identify") {
       clientIdBySocket.set(ws, msg.clientId);
       console.log(`Client identified as: ${msg.clientId}`);
-    } else if (msg.type === 'stats') {
+    } else if (msg.type === "stats") {
       clientStats.set(msg.clientId, {
         clientId: msg.clientId,
         lastUpdate: Date.now(),
@@ -238,29 +258,29 @@ function handleClientMessage(ws: WebSocket, data: string) {
 
 export function startWsServer(wsPort: number, httpPort: number) {
   wss = new WebSocketServer({ port: wsPort });
-  
+
   console.log(`WebSocket server running on ws://localhost:${wsPort}`);
 
   setConfigChangeCallback((config: ServerConfig) => {
-    console.log('Config updated:', config);
+    console.log("Config updated:", config);
     restartBroadcast();
   });
 
-  wss.on('connection', (ws) => {
-    console.log('Client connected');
+  wss.on("connection", (ws) => {
+    console.log("Client connected");
     startBroadcast();
-    
-    ws.on('message', (data) => {
+
+    ws.on("message", (data) => {
       handleClientMessage(ws, data.toString());
     });
-    
-    ws.on('close', () => {
+
+    ws.on("close", () => {
       const clientId = clientIdBySocket.get(ws);
       if (clientId) {
         console.log(`Client disconnected: ${clientId}`);
         clientIdBySocket.delete(ws);
       } else {
-        console.log('Client disconnected');
+        console.log("Client disconnected");
       }
       if (wss.clients.size === 0) {
         stopBroadcast();
@@ -270,7 +290,7 @@ export function startWsServer(wsPort: number, httpPort: number) {
 
   // Register stats callbacks for HTTP API
   setStatsCallbacks(
-    () => ({ 
+    () => ({
       clients: Object.fromEntries(clientStats),
       actualRate: lastActualRate,
       targetRate: getConfig().rate,

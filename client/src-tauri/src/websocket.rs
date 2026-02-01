@@ -14,6 +14,33 @@ pub struct TickMessage {
     pub ts: u64,
 }
 
+// Symbol index to string mapping for binary decoding
+const INDEX_TO_SYMBOL: [&str; 5] = ["BTC", "ETH", "SOL", "DOGE", "XRP"];
+
+/// Decode binary tick message (20 bytes):
+/// - Bytes 0-3: symbol as u32 little-endian
+/// - Bytes 4-11: price as f64 little-endian
+/// - Bytes 12-19: timestamp as i64 little-endian
+fn decode_binary_tick(data: &[u8]) -> Option<TickMessage> {
+    if data.len() < 20 {
+        return None;
+    }
+    
+    let symbol_index = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    let price = f64::from_le_bytes([
+        data[4], data[5], data[6], data[7],
+        data[8], data[9], data[10], data[11],
+    ]);
+    let ts = i64::from_le_bytes([
+        data[12], data[13], data[14], data[15],
+        data[16], data[17], data[18], data[19],
+    ]) as u64;
+    
+    let symbol = INDEX_TO_SYMBOL.get(symbol_index).unwrap_or(&"BTC").to_string();
+    
+    Some(TickMessage { symbol, price, ts })
+}
+
 // Metrics emitted to frontend
 #[derive(Debug, Clone, Serialize)]
 pub struct RustMetrics {
@@ -160,28 +187,49 @@ pub async fn connect_websocket(
     while state.running.load(Ordering::Relaxed) {
         match read.next().await {
             Some(Ok(msg)) => {
-                if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
-                    // Count every message
-                    let count = state.total_messages.fetch_add(1, Ordering::Relaxed);
-                    state.messages_this_second.fetch_add(1, Ordering::Relaxed);
-                    
-                    // Only parse JSON and update last_tick every 1000 messages to reduce overhead
-                    if count % 1000 == 0 {
-                        if let Ok(tick) = serde_json::from_str::<TickMessage>(&text) {
-                            let now = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap()
-                                .as_millis() as u64;
-                            
-                            let latency = now.saturating_sub(tick.ts);
-                            state.latency_sum_ms.fetch_add(latency, Ordering::Relaxed);
-                            state.latency_count.fetch_add(1, Ordering::Relaxed);
-                            
-                            // Update last_tick (only every 1000 messages)
-                            if let Ok(mut last) = state.last_tick.try_lock() {
-                                *last = Some(tick);
-                            }
+                // Handle both text (JSON) and binary messages
+                let tick_opt: Option<TickMessage> = match &msg {
+                    Message::Text(text) => {
+                        // Count every message
+                        let count = state.total_messages.fetch_add(1, Ordering::Relaxed);
+                        state.messages_this_second.fetch_add(1, Ordering::Relaxed);
+                        
+                        // Only parse JSON every 1000 messages to reduce overhead
+                        if count % 1000 == 0 {
+                            serde_json::from_str::<TickMessage>(text).ok()
+                        } else {
+                            None
                         }
+                    }
+                    Message::Binary(data) => {
+                        // Count every message
+                        let count = state.total_messages.fetch_add(1, Ordering::Relaxed);
+                        state.messages_this_second.fetch_add(1, Ordering::Relaxed);
+                        
+                        // Only decode binary every 1000 messages to reduce overhead
+                        if count % 1000 == 0 {
+                            decode_binary_tick(data)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+                
+                // Process tick if we decoded one
+                if let Some(tick) = tick_opt {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis() as u64;
+                    
+                    let latency = now.saturating_sub(tick.ts);
+                    state.latency_sum_ms.fetch_add(latency, Ordering::Relaxed);
+                    state.latency_count.fetch_add(1, Ordering::Relaxed);
+                    
+                    // Update last_tick
+                    if let Ok(mut last) = state.last_tick.try_lock() {
+                        *last = Some(tick);
                     }
                 }
             }

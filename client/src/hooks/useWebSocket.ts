@@ -15,6 +15,32 @@ export interface WebSocketState {
   metrics: MetricsSnapshot | null;
 }
 
+// Symbol mapping for binary decoding
+const INDEX_TO_SYMBOL = ['BTC', 'ETH', 'SOL', 'DOGE', 'XRP'] as const;
+
+/**
+ * Decode binary tick message (20 bytes):
+ * - Bytes 0-3: symbol as u32 little-endian
+ * - Bytes 4-11: price as f64 little-endian
+ * - Bytes 12-19: timestamp as i64 little-endian
+ */
+function decodeBinaryTick(buffer: ArrayBuffer): TickMessage {
+  const view = new DataView(buffer);
+  const symbolIndex = view.getUint32(0, true); // little-endian
+  const price = view.getFloat64(4, true);
+  // Read timestamp as two 32-bit parts (JS doesn't have native i64)
+  const tsLow = view.getUint32(12, true);
+  const tsHigh = view.getUint32(16, true);
+  // Combine into number (works for timestamps < 2^53)
+  const ts = tsLow + tsHigh * 0x100000000;
+  
+  return {
+    symbol: INDEX_TO_SYMBOL[symbolIndex] || 'BTC',
+    price,
+    ts,
+  };
+}
+
 // Determine client ID based on environment
 function getClientId(): string {
   // Check multiple ways to detect Tauri
@@ -72,6 +98,8 @@ export function useWebSocket(url: string, autoConnect: boolean = true) {
 
     metricsRef.current.start();
     const ws = new WebSocket(url);
+    // Set binaryType to arraybuffer for efficient binary handling
+    ws.binaryType = 'arraybuffer';
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -95,7 +123,16 @@ export function useWebSocket(url: string, autoConnect: boolean = true) {
 
     ws.onmessage = (event) => {
       try {
-        const tick: TickMessage = JSON.parse(event.data);
+        let tick: TickMessage;
+        
+        if (event.data instanceof ArrayBuffer) {
+          // Binary message
+          tick = decodeBinaryTick(event.data);
+        } else {
+          // JSON text message
+          tick = JSON.parse(event.data);
+        }
+        
         metricsRef.current.recordMessage(tick.ts);
         setState((s) => ({
           ...s,

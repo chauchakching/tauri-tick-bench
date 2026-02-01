@@ -1,11 +1,14 @@
 // server/src/config.ts
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 
+export type MessageFormat = 'json' | 'binary';
+
 export interface ServerConfig {
   rate: number;
   rampEnabled: boolean;
   rampPercent: number;
   rampIntervalSec: number;
+  format: MessageFormat;
 }
 
 const config: ServerConfig = {
@@ -13,6 +16,7 @@ const config: ServerConfig = {
   rampEnabled: false,
   rampPercent: 10,
   rampIntervalSec: 5,
+  format: 'json',
 };
 
 type ConfigChangeCallback = (config: ServerConfig) => void;

@@ -22,6 +22,7 @@ function parseArgs() {
     duration: 10,
     serverMode: 'ws' as 'ws' | 'uws',
     browserMode: 'headless' as 'headless' | 'default',
+    messageFormat: 'json' as 'json' | 'binary',
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -58,6 +59,14 @@ function parseArgs() {
         console.error(`Unknown browser mode: ${mode}. Use 'headless' or 'default'`);
         process.exit(1);
       }
+    } else if (arg === '--format' || arg === '-f') {
+      const format = args[++i];
+      if (format === 'json' || format === 'binary') {
+        config.messageFormat = format;
+      } else {
+        console.error(`Unknown message format: ${format}. Use 'json' or 'binary'`);
+        process.exit(1);
+      }
     } else if (arg === '--help' || arg === '-h') {
       console.log(`
 Usage: npx tsx scripts/run-benchmark.ts [options]
@@ -68,6 +77,8 @@ Options:
   -s, --server-mode <m>  Server mode: ws or uws (default: ws)
   -b, --browser <mode>   Browser mode: headless (Chromium) or default (your browser)
                          (default: headless)
+  -f, --format <fmt>     Message format: json (~50B) or binary (20B fixed)
+                         (default: json)
   -r, --rate <number>    Target message rate per second (default: 500000)
   -d, --duration <sec>   Test duration in seconds (default: 10)
   -h, --help             Show this help
@@ -76,6 +87,7 @@ Examples:
   npx tsx scripts/run-benchmark.ts --mode tauri-rust --rate 500000 --duration 15
   npx tsx scripts/run-benchmark.ts -m browser -b default   # Use your default browser
   npx tsx scripts/run-benchmark.ts --server-mode uws -m browser
+  npx tsx scripts/run-benchmark.ts --format binary -r 1000000  # Test binary at 1M/s
   npm run benchmark -- --mode tauri-rust
 `);
       process.exit(0);
@@ -96,6 +108,7 @@ const CONFIG = {
   modes: ARGS.modes,
   serverMode: ARGS.serverMode,
   browserMode: ARGS.browserMode,
+  messageFormat: ARGS.messageFormat,
 };
 
 interface ClientStats {
@@ -185,6 +198,15 @@ async function setRate(rate: number): Promise<void> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rate }),
+  });
+}
+
+// Set message format
+async function setFormat(format: 'json' | 'binary'): Promise<void> {
+  await fetch(`http://localhost:${getStatsPort()}/config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ format }),
   });
 }
 
@@ -431,10 +453,12 @@ async function runTauriTest(mode: 'js' | 'rust'): Promise<TestResult | null> {
 
 // Print results
 function printResults(results: TestResult[]): void {
+  const formatLabel = CONFIG.messageFormat === 'binary' ? 'binary (20B)' : 'json (~50B)';
   console.log('\n' + '='.repeat(85));
   console.log('BENCHMARK RESULTS');
   console.log('='.repeat(85));
   console.log(`Target rate: ${CONFIG.messageRate.toLocaleString()}/s`);
+  console.log(`Message format: ${formatLabel}`);
   console.log(`Test duration: ${CONFIG.testDurationSec}s per test`);
   console.log('');
   
@@ -532,11 +556,13 @@ process.on('SIGTERM', async () => {
 
 // Main
 async function main() {
+  const formatLabel = CONFIG.messageFormat === 'binary' ? 'binary (20B)' : 'json (~50B)';
   console.log('🚀 Tick Bench Benchmark');
   console.log(`   Target: ${CONFIG.messageRate.toLocaleString()}/s`);
   console.log(`   Duration: ${CONFIG.testDurationSec}s`);
   console.log(`   Modes: ${CONFIG.modes.join(', ')}`);
   console.log(`   Server: ${CONFIG.serverMode}`);
+  console.log(`   Format: ${formatLabel}`);
   if (CONFIG.modes.includes('browser-js')) {
     console.log(`   Browser: ${CONFIG.browserMode}`);
   }
@@ -545,9 +571,10 @@ async function main() {
     // Start server
     await startServer();
     
-    // Set rate
+    // Set format and rate
+    await setFormat(CONFIG.messageFormat);
     await setRate(CONFIG.messageRate);
-    console.log(`   Rate configured: ${CONFIG.messageRate.toLocaleString()}/s`);
+    console.log(`   Config: ${CONFIG.messageRate.toLocaleString()}/s, ${formatLabel}`);
     
     const results: TestResult[] = [];
     
