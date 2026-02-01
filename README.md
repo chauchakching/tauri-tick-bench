@@ -1,10 +1,22 @@
 # Tauri Tick Bench
 
-A WebSocket performance benchmark comparing message throughput across different client configurations:
+A benchmark for high-frequency WebSocket message processing — the kind needed for real-time trading UIs, live dashboards, or multiplayer games.
 
-- **browser-js** - Standard browser with JavaScript WebSocket
-- **tauri-js** - Tauri app with JavaScript WebSocket (WKWebView)
-- **tauri-rust** - Tauri app with native Rust WebSocket
+**The question:** Can a Tauri app handle more messages per second than a browser?
+
+**The answer:** Yes — but only if you move WebSocket handling from JavaScript to Rust.
+
+## How It Works
+
+The benchmark compares three approaches to receiving WebSocket messages:
+
+| Mode | WebSocket Handler | Message Path |
+|------|-------------------|--------------|
+| **browser-js** | JavaScript in browser | Server → Browser JS → React |
+| **tauri-js** | JavaScript in WebView | Server → WebView JS → React |
+| **tauri-rust** | Native Rust process | Server → Rust → Tauri event → React |
+
+The key insight: **tauri-rust** handles the WebSocket connection in Rust (outside the WebView), parses messages natively, and only sends processed data to the UI via Tauri's event system. This bypasses the JavaScript event loop bottleneck entirely.
 
 ## Sample Results
 
