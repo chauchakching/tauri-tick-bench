@@ -16,6 +16,7 @@ function parseArgs() {
     modes: ['browser-js', 'tauri-js', 'tauri-rust'] as string[],
     rate: 500_000,
     duration: 10,
+    serverMode: 'ws' as 'ws' | 'uws',
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -36,6 +37,14 @@ function parseArgs() {
       config.rate = parseInt(args[++i], 10);
     } else if (arg === '--duration' || arg === '-d') {
       config.duration = parseInt(args[++i], 10);
+    } else if (arg === '--server-mode' || arg === '-s') {
+      const mode = args[++i];
+      if (mode === 'ws' || mode === 'uws') {
+        config.serverMode = mode;
+      } else {
+        console.error(`Unknown server mode: ${mode}. Use 'ws' or 'uws'`);
+        process.exit(1);
+      }
     } else if (arg === '--help' || arg === '-h') {
       console.log(`
 Usage: npx tsx scripts/run-benchmark.ts [options]
@@ -45,11 +54,13 @@ Options:
                          (default: all)
   -r, --rate <number>    Target message rate per second (default: 500000)
   -d, --duration <sec>   Test duration in seconds (default: 10)
+  -s, --server-mode <m>  Server mode: ws or uws (default: ws)
   -h, --help             Show this help
 
 Examples:
   npx tsx scripts/run-benchmark.ts --mode tauri-rust --rate 500000 --duration 15
   npx tsx scripts/run-benchmark.ts -m browser -r 100000
+  npx tsx scripts/run-benchmark.ts --server-mode uws -m browser
   npm run benchmark -- --mode tauri-rust
 `);
       process.exit(0);
@@ -68,6 +79,7 @@ const CONFIG = {
   clientDevPort: 5173,
   messageRate: ARGS.rate,
   modes: ARGS.modes,
+  serverMode: ARGS.serverMode,
 };
 
 interface ClientStats {
@@ -129,10 +141,15 @@ async function killPort(port: number): Promise<void> {
   }
 }
 
+// Get the HTTP stats port based on server mode
+function getStatsPort(): number {
+  return CONFIG.serverMode === 'uws' ? CONFIG.serverWsPort : CONFIG.serverHttpPort;
+}
+
 // Fetch stats from server
 async function fetchServerStats(): Promise<ServerStats | null> {
   try {
-    const res = await fetch(`http://localhost:${CONFIG.serverHttpPort}/stats`);
+    const res = await fetch(`http://localhost:${getStatsPort()}/stats`);
     return await res.json();
   } catch {
     return null;
@@ -142,13 +159,13 @@ async function fetchServerStats(): Promise<ServerStats | null> {
 // Clear stats on server
 async function clearStats(): Promise<void> {
   try {
-    await fetch(`http://localhost:${CONFIG.serverHttpPort}/stats`, { method: 'DELETE' });
+    await fetch(`http://localhost:${getStatsPort()}/stats`, { method: 'DELETE' });
   } catch {}
 }
 
 // Set message rate
 async function setRate(rate: number): Promise<void> {
-  await fetch(`http://localhost:${CONFIG.serverHttpPort}/config`, {
+  await fetch(`http://localhost:${getStatsPort()}/config`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rate }),
@@ -230,12 +247,15 @@ async function runTest(clientId: string, durationSec: number): Promise<TestResul
 
 // Start server and wait for it to be ready
 async function startServer(): Promise<ChildProcess> {
-  console.log('📡 Starting server...');
+  console.log(`📡 Starting server (${CONFIG.serverMode} mode)...`);
   
   await killPort(CONFIG.serverWsPort);
-  await killPort(CONFIG.serverHttpPort);
+  if (CONFIG.serverMode === 'ws') {
+    await killPort(CONFIG.serverHttpPort);
+  }
   
-  const server = spawn('npm', ['run', 'dev'], {
+  const command = CONFIG.serverMode === 'uws' ? 'dev:uws' : 'dev';
+  const server = spawn('npm', ['run', command], {
     cwd: path.join(process.cwd(), 'server'),
     stdio: 'pipe',
     shell: true,
@@ -433,7 +453,9 @@ async function cleanup() {
   try { await execAsync('pkill -f "tsx watch" 2>/dev/null'); } catch {}
   
   await killPort(CONFIG.serverWsPort);
-  await killPort(CONFIG.serverHttpPort);
+  if (CONFIG.serverMode === 'ws') {
+    await killPort(CONFIG.serverHttpPort);
+  }
   await killPort(CONFIG.clientDevPort);
   
   console.log('   Done');
@@ -457,6 +479,7 @@ async function main() {
   console.log(`   Target: ${CONFIG.messageRate.toLocaleString()}/s`);
   console.log(`   Duration: ${CONFIG.testDurationSec}s`);
   console.log(`   Modes: ${CONFIG.modes.join(', ')}`);
+  console.log(`   Server: ${CONFIG.serverMode}`);
   
   try {
     // Start server
