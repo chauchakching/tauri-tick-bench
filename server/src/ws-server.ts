@@ -50,6 +50,62 @@ function broadcastBatch(messagesPerTick: number) {
   }
 }
 
+// Pre-serialized message cache
+let cachedMessage: Buffer | null = null;
+let cachedTimestamp = 0;
+
+function getSerializedTick(): Buffer {
+  const now = Date.now();
+  // Regenerate every 1ms to keep timestamps fresh
+  if (!cachedMessage || now - cachedTimestamp >= 1) {
+    cachedMessage = Buffer.from(JSON.stringify(generateTick()));
+    cachedTimestamp = now;
+  }
+  return cachedMessage;
+}
+
+// High-frequency mode state
+let highFreqRunning = false;
+
+function broadcastBuffer(message: Buffer) {
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+      messagesSentThisSecond++;
+    }
+  });
+}
+
+function startHighFrequencyBroadcast(targetRate: number) {
+  const nsPerMessage = 1_000_000_000 / targetRate;
+  let lastSendTime = process.hrtime.bigint();
+  highFreqRunning = true;
+
+  function tick() {
+    if (!highFreqRunning) return;
+    
+    const now = process.hrtime.bigint();
+    const elapsed = Number(now - lastSendTime);
+    const messagesToSend = Math.floor(elapsed / nsPerMessage);
+    
+    if (messagesToSend > 0) {
+      const message = getSerializedTick();
+      for (let i = 0; i < messagesToSend; i++) {
+        broadcastBuffer(message);
+      }
+      lastSendTime = now;
+    }
+    
+    setImmediate(tick);
+  }
+  
+  setImmediate(tick);
+}
+
+function stopHighFrequencyBroadcast() {
+  highFreqRunning = false;
+}
+
 function startTelemetry() {
   if (telemetryIntervalId) return;
   telemetryIntervalId = setInterval(() => {
@@ -93,21 +149,22 @@ function startBroadcast() {
   stopBroadcast();
   const config = getConfig();
   
-  // For rates > 1000, batch messages per interval tick
-  // setInterval min resolution is ~1ms, so max 1000 ticks/sec
-  const MAX_TICKS_PER_SEC = 1000;
+  // Use high-frequency mode for rates > 10000
+  const HIGH_FREQ_THRESHOLD = 10000;
   
-  if (config.rate <= MAX_TICKS_PER_SEC) {
-    // Simple mode: one message per interval
+  if (config.rate > HIGH_FREQ_THRESHOLD) {
+    console.log(`Broadcasting at ${config.rate} msg/sec (high-frequency mode)`);
+    startHighFrequencyBroadcast(config.rate);
+  } else if (config.rate <= 1000) {
     const intervalMs = 1000 / config.rate;
     intervalId = setInterval(broadcast, intervalMs);
+    console.log(`Broadcasting at ${config.rate} msg/sec`);
   } else {
-    // Batch mode: multiple messages per 1ms tick
-    const messagesPerTick = Math.ceil(config.rate / MAX_TICKS_PER_SEC);
+    const messagesPerTick = Math.ceil(config.rate / 1000);
     intervalId = setInterval(() => broadcastBatch(messagesPerTick), 1);
+    console.log(`Broadcasting at ${config.rate} msg/sec (batch mode)`);
   }
   
-  console.log(`Broadcasting at ${config.rate} msg/sec`);
   startTelemetry();
 
   if (config.rampEnabled) {
@@ -130,6 +187,7 @@ function stopBroadcast() {
     clearInterval(rampIntervalId);
     rampIntervalId = null;
   }
+  stopHighFrequencyBroadcast();
   stopTelemetry();
 }
 
