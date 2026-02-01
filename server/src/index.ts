@@ -15,6 +15,7 @@ let telemetryIntervalId: ReturnType<typeof setInterval> | null = null;
 // Server-side telemetry
 let messagesSentThisSecond = 0;
 let lastTelemetryTime = Date.now();
+let lastActualRate = 0; // Track actual rate for API
 
 // Client stats collection
 interface ClientStats {
@@ -60,6 +61,7 @@ function startTelemetry() {
     const now = Date.now();
     const elapsed = (now - lastTelemetryTime) / 1000;
     const actualRate = Math.round(messagesSentThisSecond / elapsed);
+    lastActualRate = actualRate; // Store for API
     const targetRate = getConfig().rate;
     
     // Build stats output
@@ -210,7 +212,11 @@ wss.on('connection', (ws) => {
 
 // Register stats callbacks for HTTP API
 setStatsCallbacks(
-  () => Object.fromEntries(clientStats),
+  () => ({ 
+    clients: Object.fromEntries(clientStats),
+    actualRate: lastActualRate,
+    targetRate: getConfig().rate,
+  }),
   () => clientStats.clear()
 );
 

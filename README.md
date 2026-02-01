@@ -46,14 +46,35 @@ Run the full benchmark suite comparing all three client modes:
 npm run benchmark
 ```
 
-This will:
-1. Start the WebSocket server
-2. Test browser-js (opens default browser)
-3. Test tauri-js (builds and runs Tauri app with JS WebSocket)
-4. Test tauri-rust (builds and runs Tauri app with Rust WebSocket)
-5. Print results and save to `results/` folder
+Or run specific modes with options:
 
-**Note:** The automated benchmark takes several minutes as it builds Tauri twice and runs 10-second tests for each mode.
+```bash
+# Test only tauri-rust at 500k target rate for 15 seconds
+npm run benchmark -- --mode tauri-rust --rate 500000 --duration 15
+
+# Test only browser
+npm run benchmark -- -m browser -r 100000
+
+# Test both tauri modes
+npm run benchmark -- -m tauri
+```
+
+**CLI Options:**
+
+| Option | Description |
+|--------|-------------|
+| `-m, --mode <mode>` | `browser-js`, `tauri-js`, `tauri-rust`, `browser`, `tauri`, or `all` |
+| `-r, --rate <n>` | Target message rate per second (default: 500000) |
+| `-d, --duration <s>` | Test duration in seconds (default: 10) |
+
+The script will:
+1. Start the WebSocket server
+2. Run requested test mode(s)
+3. Track both server actual rate and client throughput
+4. Calculate efficiency (client / server)
+5. Save results to `results/` folder
+
+**Note:** Tauri tests take longer on first run due to Rust compilation.
 
 ### Manual Testing
 
@@ -126,6 +147,8 @@ const CONFIG = {
 };
 ```
 
+**Note on server throughput:** The `messageRate` is a *target*, not a guarantee. The Node.js server realistically achieves ~150-200k msg/sec due to single-threaded execution and `setInterval` timer resolution limits (~4ms minimum). The server logs its actual send rate during tests.
+
 ## Understanding Results
 
 The benchmark measures:
@@ -138,13 +161,15 @@ The benchmark measures:
 
 ### Sample Results
 
-At 500,000 msg/sec server rate:
+At 500,000 msg/sec target rate:
 
-| Mode | Throughput | Avg Latency | P99 Latency |
-|------|------------|-------------|-------------|
-| browser-js | ~58k/s | 3,878ms | 3,883ms |
-| tauri-js | ~24k/s | 11,782ms | 11,801ms |
-| tauri-rust | ~184k/s | 0.0ms | 0.0ms |
+| Mode | Client | Server | Efficiency | Avg Lat | P99 Lat |
+|------|--------|--------|------------|---------|---------|
+| browser-js | 58k/s | 186k/s | 31% | 3,878ms | 3,883ms |
+| tauri-js | 24k/s | 186k/s | 13% | 11,782ms | 11,801ms |
+| tauri-rust | 186k/s | 186k/s | 100% | 0.0ms | 0.0ms |
+
+**Efficiency** = client rate / server rate. 100% means the client keeps up with everything the server sends.
 
 See [BENCHMARK_REPORT.md](./BENCHMARK_REPORT.md) for detailed analysis.
 

@@ -76,8 +76,12 @@ export function startConfigServer(port: number) {
     } else if (req.url === '/stats') {
       if (req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        const stats = getStats ? getStats() : {};
-        res.end(JSON.stringify({ serverRate: config.rate, clients: stats }));
+        const stats = getStats ? getStats() as { clients: unknown; actualRate: number; targetRate: number } : { clients: {}, actualRate: 0, targetRate: config.rate };
+        res.end(JSON.stringify({ 
+          serverRate: stats.actualRate, // Use actual rate, not target
+          targetRate: stats.targetRate,
+          clients: stats.clients,
+        }));
       } else if (req.method === 'DELETE') {
         clearStats?.();
         res.writeHead(200, { 'Content-Type': 'application/json' });
