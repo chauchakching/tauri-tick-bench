@@ -17,7 +17,7 @@ At 1,000,000 msg/sec target rate with uWebSockets.js server:
 | tauri-js | 23k/s | 987k/s | 2% | 4,380ms |
 | tauri-rust | 726k/s | 898k/s | 81% | 44ms |
 
-*Default browser (Chrome/Safari) performs 2-3x better than headless Chromium, but becomes completely frozen and unresponsive to user interaction under this workload.
+*Default browser (tested with Firefox) performs 2-3x better than headless Chromium, but becomes completely frozen and unresponsive to user interaction under this workload.
 
 **Efficiency** = client rate / server rate. 100% means the client keeps up with everything the server sends.
 
