@@ -54,23 +54,23 @@ function getSerializedTick(): ArrayBuffer {
 let highFreqRunning = false;
 
 function broadcastPubSub() {
-  const message = JSON.stringify(generateTick());
+  const message = getSerializedTick();
   // Use pub/sub - single syscall to broadcast to all subscribers
-  app.publish('ticks', message, false); // false = text (not binary)
-  messagesSentThisSecond++;
+  app.publish('ticks', message, true); // true = binary
+  messagesSentThisSecond += connectedClients; // Count per client, not per publish
 }
 
 function broadcastBatchPubSub(messagesPerTick: number) {
   for (let i = 0; i < messagesPerTick; i++) {
-    const message = JSON.stringify(generateTick());
-    app.publish('ticks', message, false);
-    messagesSentThisSecond++;
+    const message = getSerializedTick();
+    app.publish('ticks', message, true); // true = binary
+    messagesSentThisSecond += connectedClients; // Count per client
   }
 }
 
 function broadcastBufferPubSub(message: ArrayBuffer) {
   app.publish('ticks', message, true); // true = binary
-  messagesSentThisSecond++;
+  messagesSentThisSecond += connectedClients; // Count per client
 }
 
 function startHighFrequencyBroadcast(targetRate: number) {
