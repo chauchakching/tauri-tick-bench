@@ -6,6 +6,20 @@ A WebSocket performance benchmark comparing message throughput across different 
 - **tauri-js** - Tauri app with JavaScript WebSocket (WKWebView)
 - **tauri-rust** - Tauri app with native Rust WebSocket
 
+## Sample Results
+
+At 500,000 msg/sec target rate:
+
+| Mode | Client | Server | Efficiency | Avg Lat | P99 Lat |
+|------|--------|--------|------------|---------|---------|
+| browser-js | 58k/s | 186k/s | 31% | 3,878ms | 3,883ms |
+| tauri-js | 24k/s | 186k/s | 13% | 11,782ms | 11,801ms |
+| tauri-rust | 186k/s | 186k/s | 100% | 0.0ms | 0.0ms |
+
+**Efficiency** = client rate / server rate. 100% means the client keeps up with everything the server sends.
+
+See [BENCHMARK_REPORT.md](./BENCHMARK_REPORT.md) for detailed analysis.
+
 ## Prerequisites
 
 - **Node.js** 18+ and npm
@@ -158,20 +172,6 @@ The benchmark measures:
 | **Msg/sec** | Actual messages processed per second |
 | **Avg Latency** | Average time from server send to client receive |
 | **P99 Latency** | 99th percentile latency |
-
-### Sample Results
-
-At 500,000 msg/sec target rate:
-
-| Mode | Client | Server | Efficiency | Avg Lat | P99 Lat |
-|------|--------|--------|------------|---------|---------|
-| browser-js | 58k/s | 186k/s | 31% | 3,878ms | 3,883ms |
-| tauri-js | 24k/s | 186k/s | 13% | 11,782ms | 11,801ms |
-| tauri-rust | 186k/s | 186k/s | 100% | 0.0ms | 0.0ms |
-
-**Efficiency** = client rate / server rate. 100% means the client keeps up with everything the server sends.
-
-See [BENCHMARK_REPORT.md](./BENCHMARK_REPORT.md) for detailed analysis.
 
 ## Project Structure
 
