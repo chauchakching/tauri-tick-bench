@@ -8,29 +8,28 @@ A WebSocket performance benchmark comparing message throughput across different 
 
 ## Sample Results
 
-### With uWebSockets.js Server (1,000,000 msg/sec target)
+At 1,000,000 msg/sec target rate with uWebSockets.js server:
 
 | Mode | Client | Server | Efficiency | Avg Lat |
 |------|--------|--------|------------|---------|
-| tauri-rust | 734k/s | 896k/s | 82% | 43ms |
-
-### With Node.js ws Server (500,000 msg/sec target)
-
-| Mode | Client | Server | Efficiency | Avg Lat | P99 Lat |
-|------|--------|--------|------------|---------|---------|
-| browser-js | 58k/s | 186k/s | 31% | 3,878ms | 3,883ms |
-| tauri-js | 24k/s | 186k/s | 13% | 11,782ms | 11,801ms |
-| tauri-rust | 186k/s | 186k/s | 100% | 0.0ms | 0.0ms |
+| tauri-js | 20k/s | 987k/s | 2% | 4,500ms |
+| tauri-rust | 724k/s | 898k/s | 81% | 42ms |
 
 **Efficiency** = client rate / server rate. 100% means the client keeps up with everything the server sends.
 
-### Server Performance Comparison
+### Key Findings
 
-| Server Mode | Max Throughput | Improvement |
-|-------------|----------------|-------------|
-| ws (original) | ~186k/s | baseline |
+- **tauri-rust is 36x faster than tauri-js** at high throughput
+- **Server achieves ~987k msg/sec** with uWebSockets.js (vs ~186k with original Node.js ws)
+- **WKWebView (tauri-js) hard caps at ~20-24k msg/sec** regardless of server rate
+
+### Server Performance
+
+| Server Mode | Throughput | vs Baseline |
+|-------------|------------|-------------|
+| ws (original) | ~186k/s | 1x |
 | ws (optimized) | ~212k/s | 1.1x |
-| uWebSockets.js | ~896k/s | 4.8x |
+| **uWebSockets.js** | **~987k/s** | **5.3x** |
 
 See [BENCHMARK_REPORT.md](./BENCHMARK_REPORT.md) for detailed analysis.
 
