@@ -20,6 +20,9 @@ let messagesSentThisSecond = 0;
 let lastTelemetryTime = Date.now();
 let lastActualRate = 0; // Track actual rate for API
 
+// Cached format to avoid getConfig() in hot path
+let cachedFormat: 'json' | 'binary' = 'json';
+
 // Client stats collection
 interface ClientStats {
   clientId: string;
@@ -34,9 +37,7 @@ const clientStats: Map<string, ClientStats> = new Map();
 const clientIdBySocket: Map<WebSocket, string> = new Map();
 
 function broadcast() {
-  const config = getConfig();
-  const isBinary = config.format === 'binary';
-  const message = isBinary ? generateTickBinary() : JSON.stringify(generateTick());
+  const message = cachedFormat === 'binary' ? generateTickBinary() : JSON.stringify(generateTick());
   
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
@@ -48,11 +49,8 @@ function broadcast() {
 
 // For high rates (>1000/sec), send multiple messages per tick
 function broadcastBatch(messagesPerTick: number) {
-  const config = getConfig();
-  const isBinary = config.format === 'binary';
-  
   for (let i = 0; i < messagesPerTick; i++) {
-    const message = isBinary ? generateTickBinary() : JSON.stringify(generateTick());
+    const message = cachedFormat === 'binary' ? generateTickBinary() : JSON.stringify(generateTick());
     wss.clients.forEach((client) => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(message);
@@ -68,12 +66,10 @@ let cachedTimestamp = 0;
 
 function getSerializedTick(): Buffer {
   const now = Date.now();
-  const config = getConfig();
-  const isBinary = config.format === 'binary';
   
   // Regenerate every 1ms to keep timestamps fresh
   if (!cachedMessage || now - cachedTimestamp >= 1) {
-    cachedMessage = isBinary ? generateTickBinary() : Buffer.from(JSON.stringify(generateTick()));
+    cachedMessage = cachedFormat === 'binary' ? generateTickBinary() : Buffer.from(JSON.stringify(generateTick()));
     cachedTimestamp = now;
   }
   return cachedMessage;
@@ -165,7 +161,12 @@ function stopTelemetry() {
 function startBroadcast() {
   stopBroadcast();
   const config = getConfig();
-  const formatLabel = config.format === 'binary' ? 'binary (20B)' : 'json (~50B)';
+  
+  // Update cached format (avoid getConfig() in hot path)
+  cachedFormat = config.format;
+  cachedMessage = null; // Clear cached message when format changes
+  
+  const formatLabel = cachedFormat === 'binary' ? 'binary (20B)' : 'json (~50B)';
 
   // Use high-frequency mode for rates > 10000
   const HIGH_FREQ_THRESHOLD = 10000;
