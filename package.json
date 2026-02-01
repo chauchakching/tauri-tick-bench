@@ -1,0 +1,13 @@
+{
+  "name": "tauri-tick-bench",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "benchmark": "npx tsx scripts/run-benchmark.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "@types/node": "^20.10.0"
+  }
+}

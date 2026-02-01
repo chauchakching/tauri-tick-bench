@@ -22,6 +22,17 @@ export function setConfigChangeCallback(cb: ConfigChangeCallback) {
   onConfigChange = cb;
 }
 
+// Stats callbacks for HTTP endpoints
+type StatsGetter = () => unknown;
+type StatsClearer = () => void;
+let getStats: StatsGetter | null = null;
+let clearStats: StatsClearer | null = null;
+
+export function setStatsCallbacks(getter: StatsGetter, clearer: StatsClearer) {
+  getStats = getter;
+  clearStats = clearer;
+}
+
 export function getConfig(): ServerConfig {
   return { ...config };
 }
@@ -61,6 +72,16 @@ export function startConfigServer(port: number) {
             res.end('Invalid JSON');
           }
         });
+      }
+    } else if (req.url === '/stats') {
+      if (req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        const stats = getStats ? getStats() : {};
+        res.end(JSON.stringify({ serverRate: config.rate, clients: stats }));
+      } else if (req.method === 'DELETE') {
+        clearStats?.();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ cleared: true }));
       }
     } else {
       res.writeHead(404);
