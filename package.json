@@ -7,7 +7,8 @@
     "benchmark": "npx tsx scripts/run-benchmark.ts"
   },
   "devDependencies": {
-    "tsx": "^4.7.0",
-    "@types/node": "^20.10.0"
+    "@types/node": "^20.10.0",
+    "puppeteer": "^24.36.1",
+    "tsx": "^4.7.0"
   }
 }

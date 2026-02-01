@@ -6,8 +6,12 @@ import { spawn, exec, ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
+import puppeteer, { Browser } from 'puppeteer';
 
 const execAsync = promisify(exec);
+
+// Puppeteer browser instance
+let browser: Browser | null = null;
 
 // Parse CLI arguments
 function parseArgs() {
@@ -296,7 +300,17 @@ async function startVite(): Promise<ChildProcess> {
   throw new Error('Vite failed to start');
 }
 
-// Run browser test
+// Close Puppeteer browser
+async function closeBrowser() {
+  if (browser) {
+    try {
+      await browser.close();
+    } catch {}
+    browser = null;
+  }
+}
+
+// Run browser test using Puppeteer (headless Chromium)
 async function runBrowserTest(): Promise<TestResult | null> {
   console.log('\n🌐 Testing: browser-js');
   
@@ -305,24 +319,36 @@ async function runBrowserTest(): Promise<TestResult | null> {
     await startVite();
   }
   
-  // Open browser
+  // Launch headless browser
   const url = `http://localhost:${CONFIG.clientDevPort}`;
-  console.log(`   Opening ${url}`);
-  await execAsync(`open "${url}"`);
+  console.log(`   Launching headless Chromium...`);
+  
+  try {
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+    
+    const page = await browser.newPage();
+    console.log(`   Opening ${url}`);
+    await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
+  } catch (e) {
+    console.log(`   ❌ Failed to launch browser: ${e}`);
+    return null;
+  }
   
   // Wait for client to connect to server
   if (!await waitForClient('browser-js', 30000)) {
     console.log('   ❌ Client did not connect');
+    await closeBrowser();
     return null;
   }
   
   // Run test immediately after connection
   const result = await runTest('browser-js', CONFIG.testDurationSec);
   
-  // Close browser tab (macOS)
-  try {
-    await execAsync(`osascript -e 'tell application "System Events" to keystroke "w" using command down'`);
-  } catch {}
+  // Close browser
+  await closeBrowser();
   
   if (result) {
     console.log(`   Result: ${result.clientMsgPerSec.toLocaleString()}/s (${result.efficiency.toFixed(1)}% efficiency)`);
@@ -443,6 +469,9 @@ function saveResults(results: BenchmarkResults): void {
 // Cleanup
 async function cleanup() {
   console.log('\n🧹 Cleaning up...');
+  
+  // Close Puppeteer browser
+  await closeBrowser();
   
   for (const proc of childProcesses) {
     try { proc.kill('SIGTERM'); } catch {}
