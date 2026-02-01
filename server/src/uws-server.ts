@@ -35,16 +35,14 @@ const clientStats: Map<string, ClientStats> = new Map();
 let connectedClients = 0;
 
 // Pre-serialized message cache
-let cachedMessage: ArrayBuffer | null = null;
+let cachedMessage: string | null = null;
 let cachedTimestamp = 0;
 
-function getSerializedTick(): ArrayBuffer {
+function getSerializedTick(): string {
   const now = Date.now();
   // Regenerate every 1ms to keep timestamps fresh
   if (!cachedMessage || now - cachedTimestamp >= 1) {
-    const json = JSON.stringify(generateTick());
-    const encoder = new TextEncoder();
-    cachedMessage = encoder.encode(json).buffer;
+    cachedMessage = JSON.stringify(generateTick());
     cachedTimestamp = now;
   }
   return cachedMessage;
@@ -56,20 +54,20 @@ let highFreqRunning = false;
 function broadcastPubSub() {
   const message = getSerializedTick();
   // Use pub/sub - single syscall to broadcast to all subscribers
-  app.publish('ticks', message, true); // true = binary
+  app.publish('ticks', message, false); // false = text (clients expect text JSON)
   messagesSentThisSecond += connectedClients; // Count per client, not per publish
 }
 
 function broadcastBatchPubSub(messagesPerTick: number) {
   for (let i = 0; i < messagesPerTick; i++) {
     const message = getSerializedTick();
-    app.publish('ticks', message, true); // true = binary
+    app.publish('ticks', message, false); // false = text
     messagesSentThisSecond += connectedClients; // Count per client
   }
 }
 
-function broadcastBufferPubSub(message: ArrayBuffer) {
-  app.publish('ticks', message, true); // true = binary
+function broadcastMessagePubSub(message: string) {
+  app.publish('ticks', message, false); // false = text
   messagesSentThisSecond += connectedClients; // Count per client
 }
 
@@ -88,7 +86,7 @@ function startHighFrequencyBroadcast(targetRate: number) {
     if (messagesToSend > 0) {
       const message = getSerializedTick();
       for (let i = 0; i < messagesToSend; i++) {
-        broadcastBufferPubSub(message);
+        broadcastMessagePubSub(message);
       }
       lastSendTime = now;
     }
