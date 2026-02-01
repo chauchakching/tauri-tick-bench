@@ -12,8 +12,11 @@ At 1,000,000 msg/sec target rate with uWebSockets.js server:
 
 | Mode | Client | Server | Efficiency | Avg Lat |
 |------|--------|--------|------------|---------|
+| browser-js | ~80k/s* | 987k/s | ~8% | - |
 | tauri-js | 20k/s | 987k/s | 2% | 4,500ms |
 | tauri-rust | 724k/s | 898k/s | 81% | 42ms |
+
+*browser-js estimated from manual testing (automated benchmark has browser detection issues)
 
 **Efficiency** = client rate / server rate. 100% means the client keeps up with everything the server sends.
 
